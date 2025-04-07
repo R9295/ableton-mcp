@@ -13,6 +13,14 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("AbletonMCPServer")
 
+STATE_MODIFYING_COMMANDS = [
+    "add_notes_to_clip", "create_audio_track", "create_clip", "create_midi_track",
+    "fire_clip", "load_browser_item", "load_instrument_or_effect",
+    "search_browser_items", "set_clip_properties",
+    "set_device_parameters", "set_tempo", "set_track_name", "start_playback",
+    "stop_clip", "stop_playback"
+]
+
 @dataclass
 class AbletonConnection:
     host: str
@@ -102,12 +110,7 @@ class AbletonConnection:
         }
         
         # Check if this is a state-modifying command
-        is_modifying_command = command_type in [
-            "create_midi_track", "create_audio_track", "set_track_name",
-            "create_clip", "add_notes_to_clip", "set_clip_name",
-            "set_tempo", "fire_clip", "stop_clip", "set_device_parameter",
-            "start_playback", "stop_playback", "load_instrument_or_effect"
-        ]
+        is_modifying_command = command_type in STATE_MODIFYING_COMMANDS
         
         try:
             logger.info(f"Sending command: {command_type} with params: {params}")
@@ -361,28 +364,6 @@ def add_notes_to_clip(
     except Exception as e:
         logger.error(f"Error adding notes to clip: {str(e)}")
         return f"Error adding notes to clip: {str(e)}"
-
-@mcp.tool()
-def set_clip_name(ctx: Context, track_index: int, clip_index: int, name: str) -> str:
-    """
-    Set the name of a clip.
-    
-    Parameters:
-    - track_index: The index of the track containing the clip
-    - clip_index: The index of the clip slot containing the clip
-    - name: The new name for the clip
-    """
-    try:
-        ableton = get_ableton_connection()
-        result = ableton.send_command("set_clip_name", {
-            "track_index": track_index,
-            "clip_index": clip_index,
-            "name": name
-        })
-        return f"Renamed clip at track {track_index}, slot {clip_index} to '{name}'"
-    except Exception as e:
-        logger.error(f"Error setting clip name: {str(e)}")
-        return f"Error setting clip name: {str(e)}"
 
 @mcp.tool()
 def set_tempo(ctx: Context, tempo: float) -> str:
@@ -646,22 +627,19 @@ def load_drum_kit(ctx: Context, track_index: int, rack_uri: str, kit_path: str) 
         logger.error(f"Error loading drum kit: {str(e)}")
         return f"Error loading drum kit: {str(e)}"
 
+
 @mcp.tool()
 def get_device_parameters(ctx: Context, track_index: int, device_index: int) -> str:
     """Get all parameters for a device on any track including the master track.
-    
     Args:
         track_index: The index of the track containing the device. Use -1 for master track, or 0+ for regular tracks.
         device_index: The index of the device on the track (0 is the leftmost device)
-        
     Returns:
         A string containing the device name and all its parameters with their current values, ranges,
         and automation states.
-        
     Example:
         For regular track: get_device_parameters(0, 1)
         For master track: get_device_parameters(-1, 0)
-        
     Note:
         Use get_master_track_info() first to see available devices on the master track.
         Use get_track_info(track_index) first to see available devices on regular tracks.
@@ -669,7 +647,7 @@ def get_device_parameters(ctx: Context, track_index: int, device_index: int) -> 
     try:
         logger.info(f"Getting parameters for device {device_index} on track {track_index}")
         conn = get_ableton_connection()
-        
+
         # Send command to Ableton
         logger.info("Sending get_device_parameters command to Ableton")
         response = conn.send_command("get_device_parameters", {
@@ -677,31 +655,22 @@ def get_device_parameters(ctx: Context, track_index: int, device_index: int) -> 
             "device_index": device_index
         })
         logger.info(f"Received response from Ableton: {response}")
-        
-        # Check for error status
-        if response.get("status") == "error":
-            error_msg = response.get("message", "Unknown error")
-            logger.error(f"Error from Ableton: {error_msg}")
-            return f"Error getting device parameters: {error_msg}"
-            
-        # Get the result from the response
-        result = response.get("result", {})
-        if not result:
+
+        if not response:
             logger.error("Empty result in response")
             return "Error: Empty result from Ableton"
-            
+
         # Format the response nicely
         try:
-            device_name = result.get("device_name", "Unknown Device")
-            parameters = result.get("parameters", [])
-            
+            device_name = response.get("device_name", "Unknown Device")
+            parameters = response.get("parameters", [])
+
             if not parameters:
                 logger.warning(f"No parameters found for device {device_name}")
                 return f"Device: {device_name}\nNo parameters found"
-            
-            output = [f"Device: {device_name}"]
-            output.append("\nParameters:")
-            
+
+            output = [f"Device: {device_name}", "\nParameters:"]
+
             for param in parameters:
                 param_name = param.get("name", "Unknown")
                 param_value = param.get("value", 0.0)
@@ -709,78 +678,38 @@ def get_device_parameters(ctx: Context, track_index: int, device_index: int) -> 
                 param_max = param.get("max", 1.0)
                 param_enabled = param.get("is_enabled", True)
                 param_automated = param.get("is_automated", False)
-                
+
                 param_line = f"- {param_name}: {param_value:.2f} (range: {param_min:.2f} to {param_max:.2f})"
                 if not param_enabled:
                     param_line += " (disabled)"
                 if param_automated:
                     param_line += " (automated)"
                 output.append(param_line)
-            
+
             formatted_output = "\n".join(output)
             logger.info(f"Returning formatted output: {formatted_output}")
             return formatted_output
-            
+
         except Exception as e:
             logger.error(f"Error formatting parameters: {str(e)}")
             return f"Error formatting parameters: {str(e)}"
-            
+
     except Exception as e:
         logger.error(f"Error getting device parameters: {str(e)}")
         return f"Error getting device parameters: {str(e)}"
 
-@mcp.tool()
-def set_device_parameter(ctx: Context, track_index: int, device_index: int, parameter_name: str, value: float) -> str:
-    """Set a device parameter value for any track including the master track.
-    
-    Args:
-        track_index: The index of the track containing the device. Use -1 for master track, or 0+ for regular tracks.
-        device_index: The index of the device on the track (0 is the leftmost device)
-        parameter_name: The exact name of the parameter to set (case-sensitive)
-        value: The new value for the parameter (will be automatically clamped to parameter's min/max range)
-        
-    Returns:
-        A string confirming the parameter was set with the actual value used
-        
-    Example:
-        For regular track: set_device_parameter(0, 1, "Frequency", 0.5)
-        For master track: set_device_parameter(-1, 0, "Gain", 0.7)
-    """
-    try:
-        logger.info(f"Setting parameter {parameter_name} to {value} for device {device_index} on track {track_index}")
-        conn = get_ableton_connection()
-        
-        # Send command to Ableton
-        logger.info("Sending set_device_parameter command to Ableton")
-        result = conn.send_command("set_device_parameter", {
-            "track_index": track_index,
-            "device_index": device_index,
-            "parameter_name": parameter_name,
-            "value": value
-        })
-        logger.info(f"Received result from Ableton: {result}")
-        
-        return f"Set {result['device_name']} parameter '{result['parameter_name']}' to {result['value']:.2f}"
-    except Exception as e:
-        logger.error(f"Error setting device parameter: {str(e)}")
-        logger.error(traceback.format_exc())
-        return f"Error setting device parameter: {str(e)}"
 
 @mcp.tool()
 def get_master_track_info(ctx: Context) -> str:
     """Get detailed information about the master track including its devices and parameters.
-    
     This tool provides information specifically about the master track, including:
     - Current volume and panning values
     - List of all devices on the master track with their indices
     - Any clip slots if they exist (rare for master track)
-    
     The device indices returned by this tool can be used with get_device_parameters(-1, device_index)
     and set_device_parameter(-1, device_index, ...) to manipulate master track devices.
-    
     Returns:
         A JSON string containing detailed information about the master track
-        
     Example usage flow:
     1. Call get_master_track_info() to see available devices
     2. Use get_device_parameters(-1, device_index) to see parameters for a specific device
@@ -794,11 +723,11 @@ def get_master_track_info(ctx: Context) -> str:
         logger.error(f"Error getting master track info: {str(e)}")
         return f"Error getting master track info: {str(e)}"
 
+
 @mcp.tool()
 def search_browser_items(ctx: Context, query: str, category_type: str = "all", max_results: int = 50) -> str:
     """
     Search for browser items matching a query string.
-    
     Parameters:
     - query: Search string to match against item names
     - category_type: Type of categories to search ("all", "instruments", "sounds", "drums", "audio_effects", "midi_effects")
@@ -811,45 +740,40 @@ def search_browser_items(ctx: Context, query: str, category_type: str = "all", m
             "category_type": category_type,
             "max_results": max_results
         })
-        
+
         # Format the results nicely
-        if result.get("status") == "success":
-            search_results = result.get("result", {})
-            total_results = search_results.get("total_results", 0)
-            results = search_results.get("results", [])
-            
-            if not results:
-                return f"No items found matching '{query}'"
-            
-            output = [f"Found {total_results} items matching '{query}' (showing {len(results)}):\n"]
-            
-            for item in results:
-                name = item.get("name", "Unknown")
-                path = item.get("path", "")
-                is_loadable = item.get("is_loadable", False)
-                is_device = item.get("is_device", False)
-                
-                item_type = "Device" if is_device else "Folder" if not is_loadable else "Item"
-                output.append(f"• {name} ({item_type})")
-                output.append(f"  Path: {path}")
-                if item.get("uri"):
-                    output.append(f"  URI: {item.get('uri')}")
-                output.append("")
-            
-            return "\n".join(output)
-        else:
-            error_msg = result.get("message", "Unknown error")
-            return f"Error searching browser items: {error_msg}"
-            
+        total_results = result.get("total_results", 0)
+        results = result.get("results", [])
+
+        if total_results == 0:
+            return f"No items found matching '{query}'"
+
+        output = [f"Found {total_results} items matching '{query}' (showing {len(results)}):\n"]
+
+        for item in results:
+            name = item.get("name", "Unknown")
+            path = item.get("path", "")
+            is_loadable = item.get("is_loadable", False)
+            is_device = item.get("is_device", False)
+
+            item_type = "Device" if is_device else "Folder" if not is_loadable else "Item"
+            output.append(f"• {name} ({item_type})")
+            output.append(f"  Path: {path}")
+            if item.get("uri"):
+                output.append(f"  URI: {item.get('uri')}")
+            output.append("")
+
+        return "\n".join(output)
+
     except Exception as e:
         logger.error(f"Error searching browser items: {str(e)}")
         return f"Error searching browser items: {str(e)}"
+
 
 @mcp.tool()
 def set_clip_properties(ctx: Context, track_index: int, clip_index: int, properties: Dict[str, Any]) -> str:
     """
     Set multiple properties of a clip at once.
-    
     Parameters:
     - track_index: Index of the track
     - clip_index: Index of the clip slot
@@ -875,28 +799,25 @@ def set_clip_properties(ctx: Context, track_index: int, clip_index: int, propert
             "clip_index": clip_index,
             "properties": properties
         })
-        
-        if result.get("status") == "success":
-            clip_props = result.get("result", {})
+
+        if len(result) > 0:
             output = [f"Updated clip properties:"]
-            
-            for prop, value in clip_props.items():
+
+            for prop, value in result.items():
                 output.append(f"• {prop}: {value}")
-            
             return "\n".join(output)
         else:
-            error_msg = result.get("message", "Unknown error")
-            return f"Error setting clip properties: {error_msg}"
-            
+            return "Error setting clip properties"
+
     except Exception as e:
         logger.error(f"Error setting clip properties: {str(e)}")
         return f"Error setting clip properties: {str(e)}"
+
 
 @mcp.tool()
 def set_device_parameters(ctx: Context, track_index: int, device_index: int, parameters: Dict[str, float]) -> str:
     """
     Set multiple parameters of a device at once.
-    
     Parameters:
     - track_index: Index of the track (-1 for master track)
     - device_index: Index of the device
@@ -909,25 +830,22 @@ def set_device_parameters(ctx: Context, track_index: int, device_index: int, par
             "device_index": device_index,
             "parameters": parameters
         })
-        
-        if result.get("status") == "success":
-            device_result = result.get("result", {})
-            device_name = device_result.get("device_name", "Unknown Device")
-            params = device_result.get("parameters", {})
-            
+
+        if result["device_name"] and len(result.get("parameters", {})) > 0:
+            device_name = result.get("device_name")
+            params = result.get("parameters")
             output = [f"Updated parameters for {device_name}:"]
-            
+
             for param_name, param_info in params.items():
                 value = param_info.get("value")
                 min_val = param_info.get("min")
                 max_val = param_info.get("max")
                 output.append(f"• {param_name}: {value:.2f} (range: {min_val:.2f} to {max_val:.2f})")
-            
+
             return "\n".join(output)
         else:
-            error_msg = result.get("message", "Unknown error")
-            return f"Error setting device parameters: {error_msg}"
-            
+            return "Error setting device parameters"
+
     except Exception as e:
         logger.error(f"Error setting device parameters: {str(e)}")
         return f"Error setting device parameters: {str(e)}"
