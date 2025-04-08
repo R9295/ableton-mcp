@@ -20,7 +20,7 @@ HOST = "localhost"
 
 STATE_MODIFYING_COMMANDS = [
     "add_notes_to_clip", "create_audio_track", "create_clip", "create_midi_track",
-    "fire_clip", "load_browser_item", "search_browser_items", "set_clip_properties",
+    "fire_clip", "load_browser_item", "set_clip_properties",
     "set_device_parameters", "set_tempo", "set_track_name", "start_playback",
     "stop_clip", "stop_playback"
 ]
@@ -289,11 +289,6 @@ class AbletonMCP(ControlSurface):
                             device_index = params.get("device_index", 0)
                             parameters = params.get("parameters", {})
                             result = self._set_device_parameters(track_index, device_index, parameters)
-                        elif command_type == "search_browser_items":
-                            query = params.get("query", "")
-                            category_type = params.get("category_type", "all")
-                            max_results = params.get("max_results", 50)
-                            result = self._search_browser_items(query, category_type, max_results)
                         
                         # Put the result in the queue
                         response_queue.put({"status": "success", "result": result})
@@ -1307,111 +1302,3 @@ class AbletonMCP(ControlSurface):
             self.log_message("Error setting device parameters: {0}".format(str(e)))
             self.log_message(traceback.format_exc())
             raise
-
-    def _search_browser_items(self, query, category_type="all", max_results=50):
-        """Search for browser items matching a query string.
-        Args:
-            query: Search string to match against item names
-            category_type: Type of categories to search ("all", "instruments", "sounds", "drums", "audio_effects", "midi_effects")
-            max_results: Maximum number of results to return
-        """
-        try:
-            self.log_message("Searching for '{0}' in {1} (max: {2})".format(query, category_type, max_results))
-
-            # Access the application's browser instance
-            app = self.application()
-            if not app:
-                raise RuntimeError("Could not access Live application")
-
-            # Check if browser is available
-            if not hasattr(app, 'browser') or app.browser is None:
-                raise RuntimeError("Browser is not available in the Live application")
-
-            # Get all items to search through based on category_type
-            items_to_search = []
-
-            def collect_items(item, depth=0, max_depth=5):
-                if depth >= max_depth:
-                    return
-
-                if hasattr(item, 'children'):
-                    for child in item.children:
-                        items_to_search.append(child)
-                        collect_items(child, depth + 1, max_depth)
-
-            # Determine which categories to search
-            categories = []
-            if category_type == "all" or category_type == "instruments":
-                if hasattr(app.browser, 'instruments'):
-                    categories.append(app.browser.instruments)
-            if category_type == "all" or category_type == "sounds":
-                if hasattr(app.browser, 'sounds'):
-                    categories.append(app.browser.sounds)
-            if category_type == "all" or category_type == "drums":
-                if hasattr(app.browser, 'drums'):
-                    categories.append(app.browser.drums)
-            if category_type == "all" or category_type == "audio_effects":
-                if hasattr(app.browser, 'audio_effects'):
-                    categories.append(app.browser.audio_effects)
-            if category_type == "all" or category_type == "midi_effects":
-                if hasattr(app.browser, 'midi_effects'):
-                    categories.append(app.browser.midi_effects)
-
-            # Collect all items from selected categories
-            for category in categories:
-                collect_items(category)
-
-            # Search through collected items
-            query = query.lower()
-            matching_items = []
-
-            for item in items_to_search:
-                if len(matching_items) >= max_results:
-                    break
-
-                try:
-                    if hasattr(item, 'name') and query in item.name.lower():
-                        item_info = {
-                            "name": item.name,
-                            "path": self._get_item_path(item),
-                            "is_loadable": hasattr(item, 'is_loadable') and item.is_loadable,
-                            "is_device": hasattr(item, 'is_device') and item.is_device,
-                            "uri": item.uri if hasattr(item, 'uri') else None
-                        }
-                        matching_items.append(item_info)
-                except Exception as e:
-                    self.log_message("Error processing item: {0}".format(str(e)))
-                    continue
-
-            result = {
-                "total_results": len(matching_items),
-                "results": matching_items[:max_results]
-            }
-
-            self.log_message("Found {0} matches for '{1}'".format(len(matching_items), query))
-            return result
-
-        except Exception as e:
-            self.log_message("Error searching browser items: {0}".format(str(e)))
-            self.log_message(traceback.format_exc())
-            raise
-
-    def _get_item_path(self, item):
-        """Get the full path of a browser item"""
-        try:
-            path_parts = []
-            current = item
-            
-            # Walk up the parent chain
-            while hasattr(current, 'name') and hasattr(current, 'parent') and current.parent:
-                path_parts.insert(0, current.name)
-                current = current.parent
-            
-            # Add root category name
-            if hasattr(current, 'name'):
-                path_parts.insert(0, current.name)
-            
-            return '/'.join(path_parts)
-        except Exception as e:
-            self.log_message("Error getting item path: {0}".format(str(e)))
-            return "Unknown Path"

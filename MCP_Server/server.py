@@ -14,7 +14,7 @@ logger = logging.getLogger("AbletonMCPServer")
 
 STATE_MODIFYING_COMMANDS = [
     "add_notes_to_clip", "create_audio_track", "create_clip", "create_midi_track",
-    "fire_clip", "load_browser_item", "search_browser_items", "set_clip_properties",
+    "fire_clip", "load_browser_item", "set_clip_properties",
     "set_device_parameters", "set_tempo", "set_track_name", "start_playback",
     "stop_clip", "stop_playback"
 ]
@@ -720,52 +720,6 @@ def get_master_track_info(ctx: Context) -> str:
     except Exception as e:
         logger.error(f"Error getting master track info: {str(e)}")
         return f"Error getting master track info: {str(e)}"
-
-
-@mcp.tool()
-def search_browser_items(ctx: Context, query: str, category_type: str = "all", max_results: int = 50) -> str:
-    """
-    Search for browser items matching a query string.
-    Parameters:
-    - query: Search string to match against item names
-    - category_type: Type of categories to search ("all", "instruments", "sounds", "drums", "audio_effects", "midi_effects")
-    - max_results: Maximum number of results to return (default: 50)
-    """
-    try:
-        ableton = get_ableton_connection()
-        result = ableton.send_command("search_browser_items", {
-            "query": query,
-            "category_type": category_type,
-            "max_results": max_results
-        })
-
-        # Format the results nicely
-        total_results = result.get("total_results", 0)
-        results = result.get("results", [])
-
-        if total_results == 0:
-            return f"No items found matching '{query}'"
-
-        output = [f"Found {total_results} items matching '{query}' (showing {len(results)}):\n"]
-
-        for item in results:
-            name = item.get("name", "Unknown")
-            path = item.get("path", "")
-            is_loadable = item.get("is_loadable", False)
-            is_device = item.get("is_device", False)
-
-            item_type = "Device" if is_device else "Folder" if not is_loadable else "Item"
-            output.append(f"• {name} ({item_type})")
-            output.append(f"  Path: {path}")
-            if item.get("uri"):
-                output.append(f"  URI: {item.get('uri')}")
-            output.append("")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        logger.error(f"Error searching browser items: {str(e)}")
-        return f"Error searching browser items: {str(e)}"
 
 
 @mcp.tool()
