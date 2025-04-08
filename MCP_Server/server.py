@@ -134,8 +134,16 @@ class AbletonConnection:
             response = json.loads(response_data.decode('utf-8'))
             logger.info(f"Response parsed, status: {response.get('status', 'unknown')}")
             
-            # Return the full response instead of just the result
-            return response
+            if response.get("status") == "error":
+                logger.error(f"Ableton error: {response.get('message')}")
+                raise Exception(response.get("message", "Unknown error from Ableton"))
+
+            # For state-modifying commands, add another small delay after receiving response
+            if is_modifying_command:
+                import time
+                time.sleep(0.1)  # 100ms delay
+
+            return response.get("result", {})
             
         except socket.timeout:
             logger.error("Socket timeout while waiting for response from Ableton")
