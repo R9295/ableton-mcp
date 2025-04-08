@@ -20,8 +20,7 @@ HOST = "localhost"
 
 STATE_MODIFYING_COMMANDS = [
     "add_notes_to_clip", "create_audio_track", "create_clip", "create_midi_track",
-    "fire_clip", "load_browser_item", "load_instrument_or_effect",
-    "search_browser_items", "set_clip_properties",
+    "fire_clip", "load_browser_item", "search_browser_items", "set_clip_properties",
     "set_device_parameters", "set_tempo", "set_track_name", "start_playback",
     "stop_clip", "stop_playback"
 ]
@@ -276,10 +275,6 @@ class AbletonMCP(ControlSurface):
                             result = self._start_playback()
                         elif command_type == "stop_playback":
                             result = self._stop_playback()
-                        elif command_type == "load_instrument_or_effect":
-                            track_index = params.get("track_index", 0)
-                            uri = params.get("uri", "")
-                            result = self._load_instrument_or_effect(track_index, uri)
                         elif command_type == "load_browser_item":
                             track_index = params.get("track_index", 0)
                             item_uri = params.get("item_uri", "")
@@ -519,8 +514,7 @@ class AbletonMCP(ControlSurface):
         except Exception as e:
             self.log_message("Error creating MIDI track: " + str(e))
             raise
-    
-    
+
     def _set_track_name(self, track_index, name):
         """Set the name of a track"""
         try:
@@ -669,8 +663,7 @@ class AbletonMCP(ControlSurface):
         except Exception as e:
             self.log_message("Error stopping clip: " + str(e))
             raise
-    
-    
+
     def _start_playback(self):
         """Start playing the session"""
         try:
@@ -780,9 +773,7 @@ class AbletonMCP(ControlSurface):
             self.log_message("Error getting browser item: " + str(e))
             self.log_message(traceback.format_exc())
             raise   
-    
-    
-    
+
     def _load_browser_item(self, track_index, item_uri):
         """Load a browser item onto a track by its URI"""
         try:
